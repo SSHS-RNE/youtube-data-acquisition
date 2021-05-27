@@ -16,6 +16,8 @@ import nltk
 from datetime import datetime
 from dateutil.parser import parse
 from wordcloud import WordCloud
+from sklearn.manifold import TSNE
+from adjustText import adjust_text
 
 nltk.download('punkt')
 nltk.download('stopwords')
