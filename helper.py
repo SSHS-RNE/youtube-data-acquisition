@@ -52,9 +52,11 @@ def retrieve_statistics(videoId: str) -> List[Dict[str, int]]:
 
 # 비디오 ID를 받아, 모든 댓글을 반환한다.
 def retrieve_comments(videoId: str) -> List[List[str]]:
-    def extract_commentThread_text(item): return item['snippet']['topLevelComment']['snippet']['textDisplay']
-    def extract_commentThread_timestamp(item): return item['snippet']['topLevelComment']['snippet']['publishedAt']
-    
+    def extract_commentThread_text(
+        item): return item['snippet']['topLevelComment']['snippet']['textDisplay']
+    def extract_commentThread_timestamp(
+        item): return item['snippet']['topLevelComment']['snippet']['publishedAt']
+
     pageToken = None
     result = []
     timestamp = []
@@ -85,11 +87,11 @@ def retrieve_comments(videoId: str) -> List[List[str]]:
     return result, timestamp
 
 
-
 # 비디오 ID를 받아 자막을 반환한다.
 def retrieve_captions(videoId: str) -> List[List[str]]:
-    def extract_caption_text(item): return re.sub('<(.|\n)*?>', '', item.text)
-    
+    def extract_caption_text(item):
+        return re.sub('<(.|\n)*?>', '', item.text)
+
     resp = requests.get(
         f'https://video.google.com/timedtext?lang=en&v={videoId}')
     assert(resp.ok)
@@ -118,7 +120,8 @@ def get_recent_videos(channelId: str) -> List[Any]:
 
 # 플레이리스트 ID를 받아 앞 50개 비디오의 ID의 리스트를 반환한다.
 def retrieve_playlist_videos(playlistId: str) -> List[str]:
-    def extract_playlistItems_videoId(item): return item['snippet']['resourceId']['videoId']
+    def extract_playlistItems_videoId(item):
+        return item['snippet']['resourceId']['videoId']
 
     resp = retrieve_api('playlistItems', params={
         'part': 'snippet',
@@ -135,6 +138,7 @@ def get_words(st: str) -> List[str]:
     result = word_tokenize(st.lower())  # 소문자로 바꾸고, 토큰화
     result = [*filter(lambda x: x not in stop_words, result)]  # stop words 제거
     result = [*map(lambda x: lemmatizer.lemmatize(x), result)]  # 표제어 추출
+    result = [*filter(lambda x: len(x) > 2, result)]  # 최종 결과에서 2글자 이하 단어 제거
 
     return result
 
@@ -217,3 +221,23 @@ def get_freq_vec(df: pd.DataFrame, w: str, bins: List[float]) -> List[float]:
         result[i] = len(se[(bins[i] <= se) & (se < bins[i+1])])
 
     return result / np.linalg.norm(result)
+
+
+# 각 문서별 빈도수 데이터프레임의 리스트를 받아 tf-idf를 계산한다.
+def tf_idf(word: str, freqList: List[pd.DataFrame]) -> np.ndarray:
+    # tf: word의 index번째 영상에서의 빈도수 계산
+    def tf(word: str, index: int) -> int:
+        filtered = [*freqList[index][freqList[index]['word'] == word]['freq']]
+
+        if not filtered:
+            return 0
+        else:
+            return filtered[0]
+
+    # idf: word가 출현한 영상의 수 계산
+    def idf(word: str) -> float:
+        f = sum([(1 if word in eldf['word'] else 0) for eldf in freqList])
+        return np.log(len(freqList) / (f + 1))
+
+    # tf-idf 계산
+    return np.array([tf(word, i) for i in range(len(freqList))]) * idf(word)
