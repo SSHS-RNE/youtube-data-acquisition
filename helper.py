@@ -1,6 +1,7 @@
 from nltk.corpus import stopwords
+from nltk.tag import pos_tag
 from nltk.tokenize import word_tokenize
-from nltk.stem import WordNetLemmatizer
+from nltk.stem import WordNetLemmatizer, PorterStemmer
 import requests
 import urllib
 import copy
@@ -12,22 +13,27 @@ import numpy as np
 import pandas as pd
 import xml.etree.ElementTree as ET
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mtick
 import nltk
 from datetime import datetime
 from dateutil.parser import parse
 from wordcloud import WordCloud
 from sklearn.manifold import TSNE
+from sklearn.decomposition import PCA
+from gensim.models import Word2Vec
 from adjustText import adjust_text
 
 nltk.download('punkt')
 nltk.download('stopwords')
 nltk.download('wordnet')
+nltk.download('averaged_perceptron_tagger')
 
 lemmatizer = WordNetLemmatizer()
 stop_words = set(stopwords.words('english'))
+stemmer = PorterStemmer()
 
 
-API_KEY: Final[str] = 'AIzaSyB2OJynYIkD7nW7ymSGtmkSHp9iMVN1K-M'  # API 요청을 위한 키
+API_KEY: Final[str] = 'AIzaSyD7ZrbvvOYHD0KTu3yP-JUg_uKAMvoClNQ'  # API 요청을 위한 키
 BASE_URL: Final[str] = 'https://www.googleapis.com/youtube/v3/'  # url prefix
 
 
@@ -83,10 +89,13 @@ def retrieve_comments(videoId: str) -> List[List[str]]:
         timestamp += [*map(extract_commentThread_timestamp,
                            commentData['items'])]
 
-        print(len(result), end=' ')
+        if len(result) >= 500:
+            break
 
-    print('Done')
-    return result, timestamp
+        # print(len(result), end=' ')
+
+    # print('Done')
+    return result[:500], timestamp[:500]
 
 
 # 비디오 ID를 받아 자막을 반환한다.
@@ -121,25 +130,43 @@ def get_recent_videos(channelId: str) -> List[Any]:
 
 
 # 플레이리스트 ID를 받아 앞 50개 비디오의 ID의 리스트를 반환한다.
-def retrieve_playlist_videos(playlistId: str) -> List[str]:
+def retrieve_playlist_videos(playlistId: str, cycles: int = 1) -> List[str]:
     def extract_playlistItems_videoId(item):
         return item['snippet']['resourceId']['videoId']
 
-    resp = retrieve_api('playlistItems', params={
-        'part': 'snippet',
-        'maxResults': 50,
-        'playlistId': playlistId
-    })
+    pageToken = None
+    result = []
 
-    return [*map(extract_playlistItems_videoId, json.loads(resp.text)['items'])]
+    for _ in range(cycles):
+        resp = retrieve_api('playlistItems', params={
+            'part': 'snippet',
+            'maxResults': 50,
+            'playlistId': playlistId,
+            'pageToken': pageToken
+        })
+        assert(resp.ok)
+
+        videoData = resp.json()
+
+        if not "nextPageToken" in videoData:
+            break
+        pageToken = videoData["nextPageToken"]
+
+        result += [*map(extract_playlistItems_videoId, videoData['items'])]
+
+    return result
 
 
 # 제시된 문자열을 전처리하여 의미 있는 단어의 리스트를 반환한다.
 def get_words(st: str) -> List[str]:
-    st = re.sub('[^a-zA-Z\ ]', ' ', st)  # 공백, a-z, A-Z만 남딤
-    result = word_tokenize(st.lower())  # 소문자로 바꾸고, 토큰화
+    ALLOWED_POS: Final[str] = ['NN', 'NNS', 'NNP', 'NNPS']
+
+    st = re.sub('[^a-zA-Z\ ]', ' ', st)  # 공백, a-z, A-Z만 남김
+    result = word_tokenize(st)  # 토큰화
+    result = [word for word, pos in filter(
+        lambda tup: tup[1] in ALLOWED_POS, nltk.pos_tag(result))]  # 명사만 추출
     result = [*filter(lambda x: x not in stop_words, result)]  # stop words 제거
-    result = [*map(lambda x: lemmatizer.lemmatize(x), result)]  # 표제어 추출
+    result = [*map(lambda x: stemmer.stem(x.lower()), result)]  # 소문자화 및 어간 추출
     result = [*filter(lambda x: len(x) > 2, result)]  # 최종 결과에서 2글자 이하 단어 제거
 
     return result
@@ -242,4 +269,4 @@ def tf_idf(word: str, freqList: List[pd.DataFrame]) -> np.ndarray:
         return np.log(len(freqList) / (f + 1))
 
     # tf-idf 계산
-    return np.array([tf(word, i) for i in range(len(freqList))]) * idf(word)
+    return np.array([tf(word, index) for index in range(len(freqList))]) * idf(word)
