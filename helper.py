@@ -166,7 +166,7 @@ def get_words(st: str) -> List[str]:
     result = [word for word, pos in filter(
         lambda tup: tup[1] in ALLOWED_POS, nltk.pos_tag(result))]  # 명사만 추출
     result = [*filter(lambda x: x not in stop_words, result)]  # stop words 제거
-    result = [*map(lambda x: stemmer.stem(x.lower()), result)]  # 소문자화 및 어간 추출
+    result = [*map(lambda x: lemmatizer.lemmatize(x.lower()), result)]  # 소문자화 및 어간 추출
     result = [*filter(lambda x: len(x) > 2, result)]  # 최종 결과에서 2글자 이하 단어 제거
 
     return result
